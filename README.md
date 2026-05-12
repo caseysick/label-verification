@@ -45,8 +45,13 @@ Cross-reference with the project brief:
 |-------------|--------|
 | **Source code** | This repository. |
 | **README** (setup, run, approach, assumptions) | Sections below; **spec alignment** and **design decisions** document traceability to the brief. |
-| **Deployed application URL** | Reserved row for the hosted URL after deployment (e.g. Vercel or comparable); intended for submission materials per brief. |
+| **Deployed application URL** | See **[Deployed application](#deployed-application)** below (replace placeholder before submission). |
 
+## Deployed application
+
+**Live URL:** https://label-verification.vercel.app/  
+
+Substitute the placeholder with the production URL from the host (for example Vercel → **Deployments** → **Visit**).
 ## Spec alignment & requirement coverage
 
 | Brief theme | Implementation location |
@@ -85,7 +90,7 @@ A hardened Bureau deployment would typically add: formal **authorization** (ATO/
 
 ## Deploy (e.g. Vercel)
 
-Typical deployment imports this repository with **Node** runtime for API routes; larger bundles and slower first OCR worker initialization are expected. The resulting public URL can be recorded in **Take-home deliverables** for submission alongside the brief.
+Typical deployment imports this repository with **Node** runtime for API routes; larger bundles and slower first OCR worker initialization are expected. Copy the resulting public URL into **[Deployed application](#deployed-application)** above for graders.
 
 ## License
 
