@@ -2,6 +2,17 @@
 
 Assistive web app for comparing **beverage label evidence** (pasted text or bundled OCR) against **structured application fields**, styled for reviewer workflows similar to TTB-style label checks. **Not** integrated with COLA or any production federal system.
 
+## Architectural tradeoffs
+
+The brief asks for **approach**, **assumptions**, and traceable **design decisions**; this section states the big forks explicitly (Azure / managed vision were considered out of scope for the timeboxed prototype).
+
+| Decision | Rationale | Tradeoffs |
+|----------|-----------|-----------|
+| **Next.js Route Handlers** vs a standalone backend on **Azure** (App Service, Functions, Container Apps) | Single deployable app keeps review and CI simple while still isolating OCR and compare behind HTTP APIs (`/api/*`). A Bureau deployment would split services, add **private endpoints**, agency **IdP**, and network boundaries—documented under [Production-style deployment deltas](#production-style-deployment-deltas-treasury--bureau-narrative), not built here. | No demonstration of Azure-specific IaC, Key Vault, regional pairing, or microservice blast-radius separation. |
+| **Bundled server-side Tesseract.js** vs **remote vision / OCR** (e.g. Azure AI Vision, Document Intelligence, Textract) | Matches **blocked or restricted egress** scenarios: no inference API keys, no mandatory outbound ML dependency, reproducible runs for graders. Managed vision is the usual production upgrade path for accuracy and SLAs. | Lower OCR quality and less predictable latency than warm enterprise endpoints (especially vs. cold starts on hobby hosts—see [Limitations & assumptions](#limitations--assumptions)). |
+
+Product-level choices (manual paste for dependable demos, strict vs fuzzy fields, government-warning conservatism) stay in [Design decisions](#design-decisions-stakeholder-context--engineering).
+
 ## Quick start
 
 ```bash
@@ -45,13 +56,12 @@ Cross-reference with the project brief:
 |-------------|--------|
 | **Source code** | This repository. |
 | **README** (setup, run, approach, assumptions) | Sections below; **spec alignment** and **design decisions** document traceability to the brief. |
-| **Deployed application URL** | See **[Deployed application](#deployed-application)** below (replace placeholder before submission). |
+| **Deployed application URL** | See **[Deployed application](#deployed-application)** below. |
 
 ## Deployed application
 
-**Live URL:** https://label-verification.vercel.app/  
+**Live URL:** https://label-verification.vercel.app/
 
-Substitute the placeholder with the production URL from the host (for example Vercel → **Deployments** → **Visit**).
 ## Spec alignment & requirement coverage
 
 | Brief theme | Implementation location |
