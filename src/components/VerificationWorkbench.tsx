@@ -51,7 +51,7 @@ export function VerificationWorkbench() {
   const [extractionMode, setExtractionMode] =
     useState<ExtractionMode>("manual");
   const [pasteText, setPasteText] = useState("");
-  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [ocrImageFiles, setOcrImageFiles] = useState<File[]>([]);
   const [batchFiles, setBatchFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [report, setReport] = useState<VerificationReport | null>(null);
@@ -121,14 +121,86 @@ export function VerificationWorkbench() {
     [application],
   );
 
+  /** Sequential server OCR for one or more images; updates batch table + comparison panel. */
+  const runOcrBatch = useCallback(
+    async (files: File[]) => {
+      setBusy(true);
+      setReport(null);
+      setReportSourceFileName(null);
+      setSelectedBatchIndex(null);
+      setBatchRows(
+        files.map((file) => ({ name: file.name, status: "pending" })),
+      );
+      speak(`Starting batch of ${files.length} labels.`);
+
+      try {
+        for (let i = 0; i < files.length; i += 1) {
+          const file = files[i]!;
+          setBatchRows((rows) =>
+            rows.map((row, idx) =>
+              idx === i ? { ...row, status: "running" } : row,
+            ),
+          );
+
+          try {
+            const base64 = await fileToBase64(file);
+            const next = await verifyPayload({
+              mode: "ocr",
+              image: { base64, mimeType: file.type },
+            });
+
+            const mismatches = next.fields.filter((f) => f.verdict !== "match")
+              .length;
+            setReport(next);
+            setReportSourceFileName(file.name);
+            setSelectedBatchIndex(i);
+            setBatchRows((rows) =>
+              rows.map((row, idx) =>
+                idx === i
+                  ? {
+                      ...row,
+                      status: "done",
+                      report: next,
+                      detail:
+                        mismatches === 0
+                          ? "All field checks matched"
+                          : `${mismatches} field check(s) need attention`,
+                    }
+                  : row,
+              ),
+            );
+          } catch (error) {
+            setBatchRows((rows) =>
+              rows.map((row, idx) =>
+                idx === i
+                  ? {
+                      ...row,
+                      status: "error",
+                      detail:
+                        error instanceof Error ? error.message : "Batch error",
+                    }
+                  : row,
+              ),
+            );
+          }
+        }
+
+        speak("Batch verification finished.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [speak, verifyPayload],
+  );
+
   const onVerifySingle = useCallback(async () => {
-    setBusy(true);
-    setReport(null);
-    setReportSourceFileName(null);
-    setSelectedBatchIndex(null);
     speak("Verification started.");
     try {
       if (extractionMode === "manual") {
+        setBusy(true);
+        setReport(null);
+        setReportSourceFileName(null);
+        setSelectedBatchIndex(null);
         const next = await verifyPayload({
           mode: "manual",
           extractedLabelText: pasteText,
@@ -138,20 +210,33 @@ export function VerificationWorkbench() {
         return;
       }
 
-      if (!imageFile) {
-        speak("Select a label image before running OCR.");
+      if (!ocrImageFiles.length) {
+        speak("Select one or more label images before running OCR.");
         return;
       }
 
-      if (!ALLOWED_SET.has(imageFile.type)) {
-        speak("Unsupported image type.");
+      const invalid = ocrImageFiles.find((f) => !ALLOWED_SET.has(f.type));
+      if (invalid) {
+        speak(`Unsupported image type on file ${invalid.name}.`);
         return;
       }
 
-      const base64 = await fileToBase64(imageFile);
+      setReport(null);
+      setReportSourceFileName(null);
+      setSelectedBatchIndex(null);
+
+      if (ocrImageFiles.length > 1) {
+        await runOcrBatch(ocrImageFiles);
+        return;
+      }
+
+      setBusy(true);
+      setBatchRows([]);
+      const file = ocrImageFiles[0]!;
+      const base64 = await fileToBase64(file);
       const next = await verifyPayload({
         mode: "ocr",
-        image: { base64, mimeType: imageFile.type },
+        image: { base64, mimeType: file.type },
       });
       setReport(next);
       speak("Verification finished.");
@@ -160,7 +245,14 @@ export function VerificationWorkbench() {
     } finally {
       setBusy(false);
     }
-  }, [extractionMode, imageFile, pasteText, speak, verifyPayload]);
+  }, [
+    extractionMode,
+    ocrImageFiles,
+    pasteText,
+    runOcrBatch,
+    speak,
+    verifyPayload,
+  ]);
 
   const onVerifyBatch = useCallback(async () => {
     if (!batchFiles.length) {
@@ -174,72 +266,8 @@ export function VerificationWorkbench() {
       return;
     }
 
-    setBusy(true);
-    setReport(null);
-    setReportSourceFileName(null);
-    setSelectedBatchIndex(null);
-    setBatchRows(
-      batchFiles.map((file) => ({ name: file.name, status: "pending" })),
-    );
-    speak(`Starting batch of ${batchFiles.length} labels.`);
-
-    try {
-      for (let i = 0; i < batchFiles.length; i += 1) {
-        const file = batchFiles[i]!;
-        setBatchRows((rows) =>
-          rows.map((row, idx) =>
-            idx === i ? { ...row, status: "running" } : row,
-          ),
-        );
-
-        try {
-          const base64 = await fileToBase64(file);
-          const next = await verifyPayload({
-            mode: "ocr",
-            image: { base64, mimeType: file.type },
-          });
-
-          const mismatches = next.fields.filter((f) => f.verdict !== "match")
-            .length;
-          setReport(next);
-          setReportSourceFileName(file.name);
-          setSelectedBatchIndex(i);
-          setBatchRows((rows) =>
-            rows.map((row, idx) =>
-              idx === i
-                ? {
-                    ...row,
-                    status: "done",
-                    report: next,
-                    detail:
-                      mismatches === 0
-                        ? "All field checks matched"
-                        : `${mismatches} field check(s) need attention`,
-                  }
-                : row,
-            ),
-          );
-        } catch (error) {
-          setBatchRows((rows) =>
-            rows.map((row, idx) =>
-              idx === i
-                ? {
-                    ...row,
-                    status: "error",
-                    detail:
-                      error instanceof Error ? error.message : "Batch error",
-                  }
-                : row,
-            ),
-          );
-        }
-      }
-
-      speak("Batch verification finished.");
-    } finally {
-      setBusy(false);
-    }
-  }, [batchFiles, speak, verifyPayload]);
+    await runOcrBatch(batchFiles);
+  }, [batchFiles, runOcrBatch, speak]);
 
   const displayedReport =
     selectedBatchIndex !== null &&
@@ -418,14 +446,16 @@ export function VerificationWorkbench() {
               className="text-sm font-medium text-zinc-800 dark:text-zinc-200"
               htmlFor="label-image"
             >
-              Label image (PNG, JPEG, WebP, GIF; max ~4&nbsp;MB encoded)
+              Label image(s) (PNG, JPEG, WebP, GIF; max ~4&nbsp;MB encoded
+              each). Multiple files run as a batch with per-file results below.
             </label>
             <input
               accept={ALLOWED_IMAGE_MIME_TYPES.join(",")}
               className="min-h-11 text-sm text-zinc-800 file:mr-4 file:rounded-lg file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-blue-700 dark:text-zinc-200"
               id="label-image"
+              multiple
               onChange={(event) =>
-                setImageFile(event.target.files?.[0] ?? null)
+                setOcrImageFiles(Array.from(event.target.files ?? []))
               }
               type="file"
             />
@@ -437,7 +467,9 @@ export function VerificationWorkbench() {
             className="inline-flex min-h-11 min-w-[11rem] items-center justify-center rounded-lg bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700 disabled:cursor-not-allowed disabled:bg-blue-400"
             disabled={
               busy ||
-              (extractionMode === "manual" ? !pasteText.trim() : !imageFile)
+              (extractionMode === "manual"
+                ? !pasteText.trim()
+                : ocrImageFiles.length === 0)
             }
             onClick={() => void onVerifySingle()}
             type="button"
