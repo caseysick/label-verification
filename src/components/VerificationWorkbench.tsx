@@ -52,7 +52,6 @@ export function VerificationWorkbench() {
     useState<ExtractionMode>("manual");
   const [pasteText, setPasteText] = useState("");
   const [ocrImageFiles, setOcrImageFiles] = useState<File[]>([]);
-  const [batchFiles, setBatchFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [report, setReport] = useState<VerificationReport | null>(null);
   /** Single-image / pasted-text runs (batch rows carry their own reports). */
@@ -131,7 +130,11 @@ export function VerificationWorkbench() {
       setBatchRows(
         files.map((file) => ({ name: file.name, status: "pending" })),
       );
-      speak(`Starting batch of ${files.length} labels.`);
+      speak(
+        files.length === 1
+          ? "Starting OCR on 1 label image."
+          : `Starting OCR on ${files.length} label images.`,
+      );
 
       try {
         for (let i = 0; i < files.length; i += 1) {
@@ -185,7 +188,7 @@ export function VerificationWorkbench() {
           }
         }
 
-        speak("Batch verification finished.");
+        speak("OCR verification finished.");
       } finally {
         setBusy(false);
       }
@@ -193,7 +196,7 @@ export function VerificationWorkbench() {
     [speak, verifyPayload],
   );
 
-  const onVerifySingle = useCallback(async () => {
+  const onVerify = useCallback(async () => {
     speak("Verification started.");
     try {
       if (extractionMode === "manual") {
@@ -201,6 +204,7 @@ export function VerificationWorkbench() {
         setReport(null);
         setReportSourceFileName(null);
         setSelectedBatchIndex(null);
+        setBatchRows([]);
         const next = await verifyPayload({
           mode: "manual",
           extractedLabelText: pasteText,
@@ -221,53 +225,13 @@ export function VerificationWorkbench() {
         return;
       }
 
-      setReport(null);
-      setReportSourceFileName(null);
-      setSelectedBatchIndex(null);
-
-      if (ocrImageFiles.length > 1) {
-        await runOcrBatch(ocrImageFiles);
-        return;
-      }
-
-      setBusy(true);
-      setBatchRows([]);
-      const file = ocrImageFiles[0]!;
-      const base64 = await fileToBase64(file);
-      const next = await verifyPayload({
-        mode: "ocr",
-        image: { base64, mimeType: file.type },
-      });
-      setReport(next);
-      speak("Verification finished.");
+      await runOcrBatch(ocrImageFiles);
     } catch (e) {
       speak(e instanceof Error ? e.message : "Verification failed.");
     } finally {
       setBusy(false);
     }
-  }, [
-    extractionMode,
-    ocrImageFiles,
-    pasteText,
-    runOcrBatch,
-    speak,
-    verifyPayload,
-  ]);
-
-  const onVerifyBatch = useCallback(async () => {
-    if (!batchFiles.length) {
-      speak("Add one or more images for batch verification.");
-      return;
-    }
-
-    const invalid = batchFiles.find((f) => !ALLOWED_SET.has(f.type));
-    if (invalid) {
-      speak(`Unsupported type on file ${invalid.name}.`);
-      return;
-    }
-
-    await runOcrBatch(batchFiles);
-  }, [batchFiles, runOcrBatch, speak]);
+  }, [extractionMode, ocrImageFiles, pasteText, runOcrBatch, speak, verifyPayload]);
 
   const displayedReport =
     selectedBatchIndex !== null &&
@@ -376,8 +340,9 @@ export function VerificationWorkbench() {
           Label evidence
         </h2>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          Provide pasted OCR text (recommended for demos) or upload an image
-          for bundled Tesseract OCR on the server (accuracy varies).
+          Paste label text (recommended for demos) or upload label images for
+          bundled server OCR. Multiple images share the same application fields;
+          each file is verified separately; nothing is merged across uploads.
         </p>
 
         <fieldset className="mt-5 space-y-3">
@@ -417,8 +382,9 @@ export function VerificationWorkbench() {
                 Server OCR (bundled Tesseract)
               </span>
               <span className="text-sm text-zinc-600 dark:text-zinc-400">
-                Runs inside this deployment; no paid Vision API required. Large
-                images may time out on hobby hosts.
+                Runs on this server (no paid Vision API). Large images may time
+                out on hobby hosts. Choose one or more images; each is processed in
+                order with status below.
               </span>
             </span>
           </label>
@@ -446,8 +412,7 @@ export function VerificationWorkbench() {
               className="text-sm font-medium text-zinc-800 dark:text-zinc-200"
               htmlFor="label-image"
             >
-              Label image(s) (PNG, JPEG, WebP, GIF; max ~4&nbsp;MB encoded
-              each). Multiple files run as a batch with per-file results below.
+              Label images (PNG, JPEG, WebP, GIF; max ~4&nbsp;MB encoded each)
             </label>
             <input
               accept={ALLOWED_IMAGE_MIME_TYPES.join(",")}
@@ -471,87 +436,71 @@ export function VerificationWorkbench() {
                 ? !pasteText.trim()
                 : ocrImageFiles.length === 0)
             }
-            onClick={() => void onVerifySingle()}
+            onClick={() => void onVerify()}
             type="button"
           >
-            {busy ? "Running…" : "Run verification"}
+            {busy ? "Running…" : extractionMode === "ocr" ? "Run OCR" : "Run verification"}
           </button>
         </div>
-      </section>
-
-      <section className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-          Batch importer preview
-        </h2>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          Runs the same application record against each image separately (nothing
-          is merged across files). While processing, the comparison below follows
-          the latest file; when finished, use{" "}
-          <strong>View comparison</strong> on any completed row to switch between
-          files—each row keeps its own OCR snapshot and field results.
-        </p>
-        <input
-          accept={ALLOWED_IMAGE_MIME_TYPES.join(",")}
-          className="mt-4 min-h-11 text-sm text-zinc-800 file:mr-4 file:rounded-lg file:border-0 file:bg-zinc-900 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-zinc-800 dark:text-zinc-200 dark:file:bg-zinc-100 dark:file:text-zinc-900 dark:hover:file:bg-zinc-200"
-          multiple
-          onChange={(event) =>
-            setBatchFiles(Array.from(event.target.files ?? []))
-          }
-          type="file"
-        />
-        <button
-          className="mt-4 inline-flex min-h-11 items-center justify-center rounded-lg border border-zinc-300 px-4 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-900"
-          disabled={busy || batchFiles.length === 0}
-          onClick={() => void onVerifyBatch()}
-          type="button"
-        >
-          {busy ? "Processing batch…" : "Run batch OCR"}
-        </button>
 
         {batchRows.length > 0 ? (
-          <table className="mt-6 w-full border-collapse text-left text-sm">
-            <thead className="border-b border-zinc-200 text-xs uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-              <tr>
-                <th className="py-2 pr-4 font-medium">File</th>
-                <th className="py-2 pr-4 font-medium">Status</th>
-                <th className="py-2 pr-4 font-medium">Notes</th>
-                <th className="py-2 font-medium">Comparison</th>
-              </tr>
-            </thead>
-            <tbody>
-              {batchRows.map((row, index) => (
-                <tr
-                  className={`border-b border-zinc-100 dark:border-zinc-900 ${
-                    selectedBatchIndex === index ? "bg-blue-50/80 dark:bg-blue-950/40" : ""
-                  }`}
-                  key={`${row.name}-${index}`}
-                >
-                  <td className="py-3 pr-4 pl-4 font-medium text-zinc-900 dark:text-zinc-100">
-                    {row.name}
-                  </td>
-                  <td className="py-3 pr-4 capitalize text-zinc-700 dark:text-zinc-300">
-                    {row.status}
-                  </td>
-                  <td className="py-3 pr-4 text-zinc-600 dark:text-zinc-400">
-                    {row.detail ?? "—"}
-                  </td>
-                  <td className="py-3">
-                    {row.status === "done" && row.report ? (
-                      <button
-                        className="inline-flex min-h-9 items-center justify-center rounded-lg border border-blue-600 px-3 text-xs font-semibold text-blue-700 hover:bg-blue-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:border-blue-500 dark:text-blue-300 dark:hover:bg-blue-950/60"
-                        onClick={() => setSelectedBatchIndex(index)}
-                        type="button"
-                      >
-                        View comparison
-                      </button>
-                    ) : (
-                      <span className="text-xs text-zinc-400">—</span>
-                    )}
-                  </td>
+          <div className="mt-8">
+            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+              OCR uploads in this run
+            </h3>
+            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+              While processing, comparison below follows the latest file; after
+              each completes, use{" "}
+              <strong className="font-semibold text-zinc-800 dark:text-zinc-200">
+                View comparison
+              </strong>{" "}
+              to switch files.
+            </p>
+            <table className="mt-4 w-full border-collapse text-left text-sm">
+              <thead className="border-b border-zinc-200 text-xs uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+                <tr>
+                  <th className="py-2 pr-4 font-medium">File</th>
+                  <th className="py-2 pr-4 font-medium">Status</th>
+                  <th className="py-2 pr-4 font-medium">Notes</th>
+                  <th className="py-2 font-medium">Comparison</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {batchRows.map((row, index) => (
+                  <tr
+                    className={`border-b border-zinc-100 dark:border-zinc-900 ${
+                      selectedBatchIndex === index ? "bg-blue-50/80 dark:bg-blue-950/40" : ""
+                    }`}
+                    key={`${row.name}-${index}`}
+                  >
+                    <td className="py-3 pr-4 pl-1 font-medium text-zinc-900 dark:text-zinc-100 sm:pl-0">
+                      {row.name}
+                    </td>
+                    <td className="py-3 pr-4 capitalize text-zinc-700 dark:text-zinc-300">
+                      {row.status}
+                    </td>
+                    <td className="py-3 pr-4 text-zinc-600 dark:text-zinc-400">
+                      {row.detail ?? "-"}
+                    </td>
+                    <td className="py-3">
+                      {row.status === "done" && row.report ? (
+                        <button
+                          aria-label={`View comparison for ${row.name}`}
+                          className="inline-flex min-h-9 items-center justify-center rounded-lg border border-blue-600 px-3 text-xs font-semibold text-blue-700 hover:bg-blue-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:border-blue-500 dark:text-blue-300 dark:hover:bg-blue-950/60"
+                          onClick={() => setSelectedBatchIndex(index)}
+                          type="button"
+                        >
+                          View comparison
+                        </button>
+                      ) : (
+                        <span className="text-xs text-zinc-400">-</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : null}
       </section>
 

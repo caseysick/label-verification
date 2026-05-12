@@ -55,11 +55,11 @@ Cross-reference with the project brief:
 | TTB-style fields (brand, class/type, ABV, net contents, bottler/producer address, country of origin, gov warning) | `ApplicationPayload`, `FIELD_ORDER`, UI + API schemas |
 | Sample distilled spirits example (“OLD TOM DISTILLERY”, …) | `buildDemoApplication()` defaults |
 | Government warning exactness + **`GOVERNMENT WARNING:`** banner | `government-warning.ts` (literal banner; normalized body; partial/typo paths → `uncertain`) |
-| Brand / class nuance (e.g. casing—not brittle mismatches) | Fuzzy normalization + token overlap for **brand** and **class/type** only (`thresholds.ts`, `fuzzy-token-overlap.ts`) |
-| ~5&nbsp;s feedback expectation | **Manual paste** offers the most predictable fast path; **bundled OCR** can exceed ~5&nbsp;s on first cold start—documented under limitations |
-| Batch / peak-season uploads | Batch OCR queue + **per-file** stored reports + **View comparison** so results remain attributable to each file |
+| Brand / class nuance (e.g. casing; not brittle mismatches) | Fuzzy normalization + token overlap for **brand** and **class/type** only (`thresholds.ts`, `fuzzy-token-overlap.ts`) |
+| ~5&nbsp;s feedback expectation | **Manual paste** offers the most predictable fast path; **bundled OCR** can exceed ~5&nbsp;s on first cold start (see limitations) |
+| Batch / peak-season uploads | Server OCR accepts multiple images under **Label evidence**; **per-file** queue rows + **View comparison** keep results attributable to each file |
 | Standalone POC (no COLA) | Described in this README intro |
-| Blocked outbound / no cloud ML dependency required | Server-side **Tesseract.js**—no mandatory external inference API |
+| Blocked outbound / no cloud ML dependency required | Server-side **Tesseract.js**; no mandatory external inference API |
 | Tests | `npm run test` (Vitest: compare pipeline + schemas + OCR adapters) |
 
 **Out of scope for text/OCR-based comparison:** visual prominence of the warning (**bold**, type size, placement on artwork). Layout and presentation remain a human review responsibility; the prototype operates on transcribed text only.
@@ -67,16 +67,16 @@ Cross-reference with the project brief:
 ## Design decisions (stakeholder context → engineering)
 
 - **Latency:** A dependable **manual transcript** path supports repeatable demos and grading; OCR remains optional with timeouts rather than implying vendor-grade latency on hobby-tier hosting.
-- **Firewall / egress:** **Bundled OCR** aligns with environments where outbound ML APIs are unreliable or blocked—reducing dependence on features that fail behind strict egress.
-- **Accessible UX:** Single workbench, large controls, plain-language statuses; batch rows name files so outcomes stay accountable under spike workloads.
-- **Government warning:** Banner substring and body text are treated conservatively; **`uncertain`** is preferred over silent **`match`** when OCR degrades wording—without pixel-level bold/size/layout verification (see above).
+- **Firewall / egress:** **Bundled OCR** aligns with environments where outbound ML APIs are unreliable or blocked, avoiding reliance on features that fail behind strict egress.
+- **Accessible UX:** Single workbench, large controls, plain-language statuses; OCR queue rows name files so outcomes stay accountable under spike workloads.
+- **Government warning:** Banner substring and body text are treated conservatively; **`uncertain`** is preferred over silent **`match`** when OCR degrades wording. Pixel-level bold/size/layout verification is out of scope (see above).
 - **Strict vs fuzzy fields:** Heuristic looseness is limited to **brand** and **class/type**; ABV, net contents, producer address, and country follow **strict** normalized substring checks for predictable behavior.
 
 ## Limitations & assumptions
 
 - **Bundled OCR quality** varies with glare, skew, and resolution; **manual paste** is the most deterministic path for demos and evaluation.
-- **Government warning** logic checks for the literal `GOVERNMENT WARNING:` banner plus normalized body text; **bold / font size / physical placement** are **not** scored—only recovered text. Real adjudication may require additional TTB-specific rules.
-- **No database:** batch preview runs sequentially in-session only.
+- **Government warning** logic checks for the literal `GOVERNMENT WARNING:` banner plus normalized body text; **bold / font size / physical placement** are **not** scored (only recovered text). Real adjudication may require additional TTB-specific rules.
+- **No database:** OCR queue runs sequentially in-session only.
 - **Cold starts** on hobby hosts can exceed ideal ~5&nbsp;s UX for the first OCR invocation; latency is documented explicitly for evaluation transparency.
 
 ## Production-style deployment deltas (Treasury / Bureau narrative)
